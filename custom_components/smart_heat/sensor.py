@@ -11,14 +11,14 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_ZONES, CONF_ZONE_NAME, DOMAIN
-from .coordinator import SmartHeatCoordinator, SmartHeatData
+from .coordinator import SmartHeatCoordinator, SmartHeatData, ZoneData
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ async def async_setup_entry(
     coordinator: SmartHeatCoordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
     entities: list[SensorEntity] = []
 
-    # Outdoor temp mirror sensor
+    # Outdoor temp sensor
     entities.append(SmartHeatOutdoorTempSensor(coordinator, entry))
 
     # Per-zone sensors
@@ -66,12 +66,6 @@ async def async_setup_entry(
             SmartHeatZoneDeltaTSensor(coordinator, entry, zone_name),
             SmartHeatZoneEnergySensor(coordinator, entry, zone_name),
             SmartHeatZoneClimateSensor(coordinator, entry, zone_name),
-        ])
-
-    # Per-zone analytics sensors (Phase 2)
-    for zone_cfg in entry.data[CONF_ZONES]:
-        zone_name = zone_cfg[CONF_ZONE_NAME]
-        entities.extend([
             SmartHeatHeatLossScoreSensor(coordinator, entry, zone_name),
             SmartHeatEffectivenessSensor(coordinator, entry, zone_name),
         ])
@@ -79,8 +73,10 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
+# ── Helpers ─────────────────────────────────────────────────────────
+
 class SmartHeatBaseSensor(CoordinatorEntity[SmartHeatCoordinator], SensorEntity):
-    """Base class for Smart Heat sensors."""
+    """Base class for Smart Heat sensors using @property pattern."""
 
     _attr_has_entity_name = True
 
@@ -98,12 +94,24 @@ class SmartHeatBaseSensor(CoordinatorEntity[SmartHeatCoordinator], SensorEntity)
         self._attr_device_info = device_info or _hub_device_info(entry)
         self._entry = entry
 
+    @property
+    def _data(self) -> SmartHeatData | None:
+        """Shortcut to coordinator data."""
+        return self.coordinator.data
+
+    def _get_zone(self, zone_name: str) -> ZoneData | None:
+        """Get zone data safely."""
+        data = self._data
+        if data is None:
+            return None
+        return data.zones.get(zone_name)
+
 
 # ── Outdoor temperature ─────────────────────────────────────────────
 
 
 class SmartHeatOutdoorTempSensor(SmartHeatBaseSensor):
-    """Mirrors the outdoor temperature for the dashboard."""
+    """Mirrors the outdoor temperature."""
 
     _attr_device_class = SensorDeviceClass.TEMPERATURE
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
@@ -112,14 +120,17 @@ class SmartHeatOutdoorTempSensor(SmartHeatBaseSensor):
     def __init__(self, coordinator: SmartHeatCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, "outdoor_temp", "Outdoor Temperature")
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        data: SmartHeatData = self.coordinator.data
-        self._attr_native_value = data.outdoor_temp
-        self._attr_extra_state_attributes = {
-            "stale": data.outdoor_sensor_stale,
-        }
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> float | None:
+        data = self._data
+        return data.outdoor_temp if data else None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        data = self._data
+        if data is None:
+            return None
+        return {"stale": data.outdoor_sensor_stale}
 
 
 # ── Per-zone sensors ────────────────────────────────────────────────
@@ -141,22 +152,23 @@ class SmartHeatZoneTempSensor(SmartHeatBaseSensor):
         )
         self._zone_name = zone_name
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        data: SmartHeatData = self.coordinator.data
-        zone = data.zones.get(self._zone_name)
-        if zone:
-            self._attr_native_value = (
-                round(zone.indoor_temp_avg, 1) if zone.indoor_temp_avg is not None else None
-            )
-            self._attr_extra_state_attributes = {
-                "sensor_count": len(zone.indoor_temps),
-                "individual_temps": zone.indoor_temps,
-                "stale": zone.sensors_stale,
-            }
-        else:
-            self._attr_native_value = None
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> float | None:
+        zone = self._get_zone(self._zone_name)
+        if zone and zone.indoor_temp_avg is not None:
+            return round(zone.indoor_temp_avg, 1)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        zone = self._get_zone(self._zone_name)
+        if zone is None:
+            return None
+        return {
+            "sensor_count": len(zone.indoor_temps),
+            "individual_temps": zone.indoor_temps,
+            "stale": zone.sensors_stale,
+        }
 
 
 class SmartHeatZoneDeltaTSensor(SmartHeatBaseSensor):
@@ -175,17 +187,13 @@ class SmartHeatZoneDeltaTSensor(SmartHeatBaseSensor):
         )
         self._zone_name = zone_name
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        data: SmartHeatData = self.coordinator.data
-        zone = data.zones.get(self._zone_name)
-        if zone and zone.indoor_temp_avg is not None and data.outdoor_temp is not None:
-            self._attr_native_value = round(
-                zone.indoor_temp_avg - data.outdoor_temp, 1
-            )
-        else:
-            self._attr_native_value = None
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> float | None:
+        data = self._data
+        zone = self._get_zone(self._zone_name)
+        if zone and zone.indoor_temp_avg is not None and data and data.outdoor_temp is not None:
+            return round(zone.indoor_temp_avg - data.outdoor_temp, 1)
+        return None
 
 
 class SmartHeatZoneEnergySensor(SmartHeatBaseSensor):
@@ -204,15 +212,10 @@ class SmartHeatZoneEnergySensor(SmartHeatBaseSensor):
         )
         self._zone_name = zone_name
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        data: SmartHeatData = self.coordinator.data
-        zone = data.zones.get(self._zone_name)
-        if zone:
-            self._attr_native_value = zone.energy_kwh
-        else:
-            self._attr_native_value = None
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> float | None:
+        zone = self._get_zone(self._zone_name)
+        return zone.energy_kwh if zone else None
 
 
 class SmartHeatZoneClimateSensor(SmartHeatBaseSensor):
@@ -229,23 +232,24 @@ class SmartHeatZoneClimateSensor(SmartHeatBaseSensor):
         )
         self._zone_name = zone_name
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        data: SmartHeatData = self.coordinator.data
-        zone = data.zones.get(self._zone_name)
-        if zone:
-            self._attr_native_value = zone.climate_state
-            self._attr_extra_state_attributes = {
-                "current_temperature": zone.climate_current_temp,
-                "target_temperature": zone.climate_target_temp,
-                "climate_entity": zone.climate_entity,
-            }
-        else:
-            self._attr_native_value = None
-        self.async_write_ha_state()
+    @property
+    def native_value(self) -> str | None:
+        zone = self._get_zone(self._zone_name)
+        return zone.climate_state if zone else None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        zone = self._get_zone(self._zone_name)
+        if zone is None:
+            return None
+        return {
+            "current_temperature": zone.climate_current_temp,
+            "target_temperature": zone.climate_target_temp,
+            "climate_entity": zone.climate_entity,
+        }
 
 
-# ── Analytics sensors (Phase 2) ─────────────────────────────────────
+# ── Analytics sensors ───────────────────────────────────────────────
 
 
 class SmartHeatHeatLossScoreSensor(SmartHeatBaseSensor):
@@ -272,14 +276,16 @@ class SmartHeatHeatLossScoreSensor(SmartHeatBaseSensor):
         self._confidence = confidence
         self.async_write_ha_state()
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._attr_native_value = self._score
-        self._attr_extra_state_attributes = {
+    @property
+    def native_value(self) -> float | None:
+        return self._score
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        return {
             "confidence": self._confidence,
             "unit_note": "Lower = better insulated. Relative metric, not a physical U-value.",
         }
-        self.async_write_ha_state()
 
 
 class SmartHeatEffectivenessSensor(SmartHeatBaseSensor):
@@ -306,11 +312,13 @@ class SmartHeatEffectivenessSensor(SmartHeatBaseSensor):
         self._confidence = confidence
         self.async_write_ha_state()
 
-    @callback
-    def _handle_coordinator_update(self) -> None:
-        self._attr_native_value = self._score
-        self._attr_extra_state_attributes = {
+    @property
+    def native_value(self) -> float | None:
+        return self._score
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        return {
             "confidence": self._confidence,
             "unit_note": "kWh consumed per degree-hour maintained. Lower = more efficient.",
         }
-        self.async_write_ha_state()
