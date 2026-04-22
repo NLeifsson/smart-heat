@@ -9,9 +9,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PLATFORMS
-from .controller import SmartHeatController
-from .coordinator import SmartHeatCoordinator
-from .database import SmartHeatDatabase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +21,11 @@ DATA_CONTROLLER = "controller"
 
 async def async_setup_entry(hass: HomeAssistant, entry: SmartHeatConfigEntry) -> bool:
     """Set up Smart Heat from a config entry."""
+    # Lazy imports — aiosqlite may not be available until HA installs requirements
+    from .controller import SmartHeatController
+    from .coordinator import SmartHeatCoordinator
+    from .database import SmartHeatDatabase
+
     # Database
     db_path = Path(hass.config.path("smart_heat", f"{entry.entry_id}.db"))
     database = SmartHeatDatabase(db_path)
@@ -51,6 +53,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: SmartHeatConfigEntry) ->
 
 async def async_unload_entry(hass: HomeAssistant, entry: SmartHeatConfigEntry) -> bool:
     """Unload a config entry."""
+    from .controller import SmartHeatController
+    from .coordinator import SmartHeatCoordinator
+    from .database import SmartHeatDatabase
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         entry_data = hass.data[DOMAIN].pop(entry.entry_id)
