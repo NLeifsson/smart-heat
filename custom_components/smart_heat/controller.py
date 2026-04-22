@@ -13,8 +13,6 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
-    ATTR_TEMPERATURE,
-    SERVICE_SET_TEMPERATURE,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
@@ -172,10 +170,10 @@ class SmartHeatController:
         try:
             await self._hass.services.async_call(
                 "climate",
-                SERVICE_SET_TEMPERATURE,
+                "set_temperature",
                 {
                     "entity_id": climate_entity,
-                    ATTR_TEMPERATURE: decision.recommended_target,
+                    "temperature": decision.recommended_target,
                 },
                 blocking=True,
             )
