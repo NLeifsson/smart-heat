@@ -5,6 +5,8 @@ from __future__ import annotations
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -31,6 +33,13 @@ class SmartHeatControlModeSelect(SelectEntity, RestoreEntity):
         self._attr_unique_id = f"{entry.entry_id}_control_mode"
         self._attr_name = "Control Mode"
         self._attr_current_option = MODE_OFF
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Smart Heat",
+            manufacturer="Smart Heat",
+            model="Controller",
+            entry_type=DeviceEntryType.SERVICE,
+        )
 
     async def async_added_to_hass(self) -> None:
         """Restore previous mode on restart."""

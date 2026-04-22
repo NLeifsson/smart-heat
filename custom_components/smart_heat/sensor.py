@@ -12,6 +12,8 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceEntryType
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -19,6 +21,29 @@ from .const import CONF_ZONES, CONF_ZONE_NAME, DOMAIN
 from .coordinator import SmartHeatCoordinator, SmartHeatData
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _zone_device_info(entry: ConfigEntry, zone_name: str) -> DeviceInfo:
+    """Build DeviceInfo for a zone — groups all zone sensors under one device."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{entry.entry_id}_{zone_name}")},
+        name=f"Smart Heat — {zone_name}",
+        manufacturer="Smart Heat",
+        model="Heating Zone",
+        entry_type=DeviceEntryType.SERVICE,
+        via_device=(DOMAIN, entry.entry_id),
+    )
+
+
+def _hub_device_info(entry: ConfigEntry) -> DeviceInfo:
+    """Build DeviceInfo for the main Smart Heat hub device."""
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Smart Heat",
+        manufacturer="Smart Heat",
+        model="Controller",
+        entry_type=DeviceEntryType.SERVICE,
+    )
 
 
 async def async_setup_entry(
@@ -65,10 +90,12 @@ class SmartHeatBaseSensor(CoordinatorEntity[SmartHeatCoordinator], SensorEntity)
         entry: ConfigEntry,
         key: str,
         name: str,
+        device_info: DeviceInfo | None = None,
     ) -> None:
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_name = name
+        self._attr_device_info = device_info or _hub_device_info(entry)
         self._entry = entry
 
 
@@ -109,7 +136,8 @@ class SmartHeatZoneTempSensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_indoor_temp", f"{zone_name} Indoor Temp"
+            coordinator, entry, f"{zone_name}_indoor_temp", f"{zone_name} Indoor Temp",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
 
@@ -142,7 +170,8 @@ class SmartHeatZoneDeltaTSensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_delta_t", f"{zone_name} ΔT"
+            coordinator, entry, f"{zone_name}_delta_t", f"{zone_name} ΔT",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
 
@@ -170,7 +199,8 @@ class SmartHeatZoneEnergySensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_energy", f"{zone_name} Energy"
+            coordinator, entry, f"{zone_name}_energy", f"{zone_name} Energy",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
 
@@ -194,7 +224,8 @@ class SmartHeatZoneClimateSensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_climate", f"{zone_name} Climate Status"
+            coordinator, entry, f"{zone_name}_climate", f"{zone_name} Climate Status",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
 
@@ -228,7 +259,8 @@ class SmartHeatHeatLossScoreSensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_heat_loss", f"{zone_name} Heat Loss Score"
+            coordinator, entry, f"{zone_name}_heat_loss", f"{zone_name} Heat Loss Score",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
         self._score: float | None = None
@@ -261,7 +293,8 @@ class SmartHeatEffectivenessSensor(SmartHeatBaseSensor):
         self, coordinator: SmartHeatCoordinator, entry: ConfigEntry, zone_name: str
     ) -> None:
         super().__init__(
-            coordinator, entry, f"{zone_name}_effectiveness", f"{zone_name} Heating Effectiveness"
+            coordinator, entry, f"{zone_name}_effectiveness", f"{zone_name} Heating Effectiveness",
+            device_info=_zone_device_info(entry, zone_name),
         )
         self._zone_name = zone_name
         self._score: float | None = None
