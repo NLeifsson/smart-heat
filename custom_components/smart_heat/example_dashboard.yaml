@@ -1,0 +1,108 @@
+# Smart Heat — Example Lovelace Dashboard
+#
+# Copy this into your HA dashboard configuration (raw YAML mode).
+# Replace entity IDs with your actual zone names.
+#
+# Zone names are based on what you configured during setup.
+# Example below uses two zones: "living_room" and "bedroom".
+
+title: Smart Heat Dashboard
+views:
+  - title: Overview
+    path: smart-heat
+    icon: mdi:home-thermometer
+    cards:
+      # ── Header ────────────────────────────────────────────────
+      - type: markdown
+        content: |
+          # 🏠 Smart Heat
+          Supervisory heating control with analytics
+
+      # ── Control Mode ──────────────────────────────────────────
+      - type: entities
+        title: Control
+        entities:
+          - entity: select.smart_heat_control_mode
+            name: Control Mode
+          - entity: number.smart_heat_comfort_minimum
+            name: Comfort Min
+          - entity: number.smart_heat_comfort_maximum
+            name: Comfort Max
+
+      # ── Outdoor Temperature ───────────────────────────────────
+      - type: sensor
+        entity: sensor.smart_heat_outdoor_temp
+        name: Outdoor
+        graph: line
+        hours_to_show: 48
+
+      # ── Zone: Living Room ─────────────────────────────────────
+      - type: vertical-stack
+        title: Living Room
+        cards:
+          - type: glance
+            entities:
+              - entity: sensor.smart_heat_living_room_indoor_temp
+                name: Indoor
+              - entity: sensor.smart_heat_living_room_delta_t
+                name: ΔT
+              - entity: sensor.smart_heat_living_room_energy
+                name: Energy
+              - entity: sensor.smart_heat_living_room_climate
+                name: HP State
+          - type: horizontal-stack
+            cards:
+              - type: sensor
+                entity: sensor.smart_heat_living_room_heat_loss
+                name: Heat Loss Score
+                graph: line
+                hours_to_show: 168
+              - type: sensor
+                entity: sensor.smart_heat_living_room_effectiveness
+                name: Effectiveness
+                graph: line
+                hours_to_show: 168
+
+      # ── Zone: Bedroom ─────────────────────────────────────────
+      - type: vertical-stack
+        title: Bedroom
+        cards:
+          - type: glance
+            entities:
+              - entity: sensor.smart_heat_bedroom_indoor_temp
+                name: Indoor
+              - entity: sensor.smart_heat_bedroom_delta_t
+                name: ΔT
+              - entity: sensor.smart_heat_bedroom_energy
+                name: Energy
+              - entity: sensor.smart_heat_bedroom_climate
+                name: HP State
+          - type: horizontal-stack
+            cards:
+              - type: sensor
+                entity: sensor.smart_heat_bedroom_heat_loss
+                name: Heat Loss Score
+                graph: line
+                hours_to_show: 168
+              - type: sensor
+                entity: sensor.smart_heat_bedroom_effectiveness
+                name: Effectiveness
+                graph: line
+                hours_to_show: 168
+
+      # ── Energy Comparison ─────────────────────────────────────
+      - type: history-graph
+        title: Energy Usage (7 days)
+        hours_to_show: 168
+        entities:
+          - entity: sensor.smart_heat_living_room_energy
+          - entity: sensor.smart_heat_bedroom_energy
+
+      # ── Temperature Comparison ────────────────────────────────
+      - type: history-graph
+        title: Temperatures (48h)
+        hours_to_show: 48
+        entities:
+          - entity: sensor.smart_heat_outdoor_temp
+          - entity: sensor.smart_heat_living_room_indoor_temp
+          - entity: sensor.smart_heat_bedroom_indoor_temp
